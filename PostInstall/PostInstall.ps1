@@ -222,7 +222,11 @@ function autoLogin {
   Write-Host "This cloud machine needs to be set to automatically login - doing that" -ForegroundColor red 
   (New-Object System.Net.WebClient).DownloadFile("https://download.sysinternals.com/files/AutoLogon.zip", "$env:APPDATA\ParsecLoader\Autologon.zip")
   Expand-Archive "$env:APPDATA\ParsecLoader\Autologon.zip" -DestinationPath "$env:APPDATA\ParsecLoader" -Force
-
+  
+  #TOFIX: REMOVE THIS HACK FOR PROD
+  Write-Host "Running a hack to enable LA Servers us-west-2" -ForegroundColor red
+  aws configure set region us-west-2
+  
   $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri http://169.254.169.254/latest/api/token
   $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/instance-id
   aws s3 cp s3://demo-parsec/herpderp.pem herpderp.pem 
