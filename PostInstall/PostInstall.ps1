@@ -227,7 +227,7 @@ $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} 
 aws s3 cp s3://demo-parsec/herpderp.pem herpderp.pem 
 $winPass = aws ec2 get-password-data --instance-id $instanceId --priv-launch-key herpderp.pem --query PasswordData --output text
 $autoLoginP = Start-Process "$env:APPDATA\ParsecLoader\Autologon.exe" -ArgumentList "/accepteula", $env:username, $env:Computername, $winPass -PassThru -Wait
-if($autoLoginP.ExitCode -eq 0) {
+If ($autoLoginP.ExitCode -eq 0) {
   Write-Host "AutoLogin Enabled" -ForegroundColor green 
 } Else {
   Write-Host "AutoLogin ERROR" -ForegroundColor red 
@@ -247,7 +247,7 @@ This application was provided by Mark Rusinovish from System Internals",
 "Password: The password you got from Azure/AWS/Google that you use to log into RDP"
 $output | Out-File "$path\Auto Login\Auto Login Instructions.txt"
 
-autoLoginShortCut#>
+autoLoginShortCut #>
 }
 
 #Creates Shortcut to Autologon.exe
