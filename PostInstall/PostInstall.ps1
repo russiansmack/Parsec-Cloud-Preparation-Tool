@@ -218,36 +218,21 @@ New-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer -Prope
 }
 
 #enable auto login - remove user password
-function autoLogin { Write-Host "This cloud machine needs to be set to automatically login - doing that" -ForegroundColor red 
-(New-Object System.Net.WebClient).DownloadFile("https://download.sysinternals.com/files/AutoLogon.zip", "$env:APPDATA\ParsecLoader\Autologon.zip")
-Expand-Archive "$env:APPDATA\ParsecLoader\Autologon.zip" -DestinationPath "$env:APPDATA\ParsecLoader" -Force
+function autoLogin { 
+  Write-Host "This cloud machine needs to be set to automatically login - doing that" -ForegroundColor red 
+  (New-Object System.Net.WebClient).DownloadFile("https://download.sysinternals.com/files/AutoLogon.zip", "$env:APPDATA\ParsecLoader\Autologon.zip")
+  Expand-Archive "$env:APPDATA\ParsecLoader\Autologon.zip" -DestinationPath "$env:APPDATA\ParsecLoader" -Force
 
-$token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
-$instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/instance-id
-aws s3 cp s3://demo-parsec/herpderp.pem herpderp.pem 
-$winPass = aws ec2 get-password-data --instance-id $instanceId --priv-launch-key herpderp.pem --query PasswordData --output text
-$autoLoginP = Start-Process "$env:APPDATA\ParsecLoader\Autologon.exe" -ArgumentList "/accepteula", $env:username, $env:Computername, $winPass -PassThru -Wait
-If ($autoLoginP.ExitCode -eq 0) {
-  Write-Host "AutoLogin Enabled" -ForegroundColor green 
-} Else {
-  Write-Host "AutoLogin ERROR" -ForegroundColor red 
-}
-<#
-$output = "
-This application was provided by Mark Rusinovish from System Internals",
-"https://docs.microsoft.com/en-us/sysinternals/downloads/autologon",
-"",
-"What this application does:  Enables your server to automatically login, so you can log into Parsec straight away.",
-"When to use it: The first time you setup your server, or when you change your servers password.",
-"",
-"Instructions",
-"Accept the EULA and enter the following details",
-"Username: $env:username",
-"Domain: $env:Computername",
-"Password: The password you got from Azure/AWS/Google that you use to log into RDP"
-$output | Out-File "$path\Auto Login\Auto Login Instructions.txt"
-
-autoLoginShortCut #>
+  $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
+  $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/instance-id
+  aws s3 cp s3://demo-parsec/herpderp.pem herpderp.pem 
+  $winPass = aws ec2 get-password-data --instance-id $instanceId --priv-launch-key herpderp.pem --query PasswordData --output text
+  $autoLoginP = Start-Process "$env:APPDATA\ParsecLoader\Autologon.exe" -ArgumentList "/accepteula", $env:username, $env:Computername, $winPass -PassThru -Wait
+  If ($autoLoginP.ExitCode -eq 0) {
+    Write-Host "AutoLogin Enabled" -ForegroundColor green 
+  } Else {
+    Write-Host "AutoLogin ERROR" -ForegroundColor red 
+  }
 }
 
 #Creates Shortcut to Autologon.exe
