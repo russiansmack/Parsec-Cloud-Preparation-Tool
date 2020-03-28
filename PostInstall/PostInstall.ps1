@@ -1,4 +1,4 @@
-﻿$path = [Environment]::GetFolderPath("Desktop")
+$path = [Environment]::GetFolderPath("Desktop")
 $currentusersid = Get-LocalUser "$env:USERNAME" | Select-Object SID | ft -HideTableHeaders | Out-String | ForEach-Object { $_.Trim() }
 
 #Creating Folders and moving script files into System directories
@@ -112,14 +112,14 @@ Write-Host "Downloading Chrome" -NoNewline
 (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/parseccloud/image/parsec+desktop.png", "C:\ParsecTemp\parsec+desktop.png")
 (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/parseccloud/image/white_ico_agc_icon.ico", "C:\ParsecTemp\white_ico_agc_icon.ico")
 (New-Object System.Net.WebClient).DownloadFile("https://raw.githubusercontent.com/jamesstringerparsec/Cloud-GPU-Updater/master/GPU%20Updater%20Tool.ps1", "$env:APPDATA\ParsecLoader\GPU Updater Tool.ps1")
-(New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/tag/s/dl/chrome/install/googlechromestandaloneenterprise64.msi", "C:\ParsecTemp\Apps\googlechromestandaloneenterprise64.msi")
+#(New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/tag/s/dl/chrome/install/googlechromestandaloneenterprise64.msi", "C:\ParsecTemp\Apps\googlechromestandaloneenterprise64.msi")
 Write-host "`r - Success!"
 }
 
 #install-base-files-silently
 function install-windows-features {
-Write-Output "Installing Google Chrome, .Net 3.5, Direct Play and DirectX Redist 2010"
-start-process -filepath "C:\Windows\System32\msiexec.exe" -ArgumentList '/qn /i "C:\ParsecTemp\Apps\googlechromestandaloneenterprise64.msi"' -Wait
+Write-Output "Installing .Net 3.5, Direct Play and DirectX Redist 2010"
+#start-process -filepath "C:\Windows\System32\msiexec.exe" -ArgumentList '/qn /i "C:\ParsecTemp\Apps\googlechromestandaloneenterprise64.msi"' -Wait
 Start-Process -FilePath "C:\ParsecTemp\Apps\directx_jun2010_redist.exe" -ArgumentList '/T:C:\ParsecTemp\DirectX /Q'-wait
 Start-Process -FilePath "C:\ParsecTemp\DirectX\DXSETUP.EXE" -ArgumentList '/silent' -wait
 Install-WindowsFeature Direct-Play | Out-Null
@@ -218,9 +218,21 @@ New-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer -Prope
 }
 
 #enable auto login - remove user password
-function autoLogin { Write-Host "This cloud machine needs to be set to automatically login - please use the Setup Auto Login shortcut + Instructions on the desktop to set this up when the script is finished" -ForegroundColor red 
+function autoLogin { Write-Host "This cloud machine needs to be set to automatically login - doing that" -ForegroundColor red 
 (New-Object System.Net.WebClient).DownloadFile("https://download.sysinternals.com/files/AutoLogon.zip", "$env:APPDATA\ParsecLoader\Autologon.zip")
 Expand-Archive "$env:APPDATA\ParsecLoader\Autologon.zip" -DestinationPath "$env:APPDATA\ParsecLoader" -Force
+
+$token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
+$instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/instance-id
+aws s3 cp s3://demo-parsec/herpderp.pem herpderp.pem 
+$winPass = aws ec2 get-password-data --instance-id $instanceId --priv-launch-key herpderp.pem --query PasswordData --output text
+$autoLoginP = Start-Process "$env:APPDATA\ParsecLoader\Autologon.exe" -ArgumentList "/accepteula", $env:username, $env:Computername, $winPass -PassThru -Wait
+if($autoLoginP.ExitCode -eq 0) {
+  Write-Host "AutoLogin Enabled" -ForegroundColor green 
+} Else {
+  Write-Host "AutoLogin ERROR" -ForegroundColor red 
+}
+<#
 $output = "
 This application was provided by Mark Rusinovish from System Internals",
 "https://docs.microsoft.com/en-us/sysinternals/downloads/autologon",
@@ -235,7 +247,7 @@ This application was provided by Mark Rusinovish from System Internals",
 "Password: The password you got from Azure/AWS/Google that you use to log into RDP"
 $output | Out-File "$path\Auto Login\Auto Login Instructions.txt"
 
-autoLoginShortCut
+autoLoginShortCut#>
 }
 
 #Creates Shortcut to Autologon.exe
@@ -601,25 +613,18 @@ enhance-pointer-precision
 enable-mousekeys
 set-time
 set-wallpaper
-Create-ClearProxy-Shortcut
-Create-AutoShutdown-Shortcut
-Create-One-Hour-Warning-Shortcut
+#Create-ClearProxy-Shortcut
+#Create-AutoShutdown-Shortcut
+#Create-One-Hour-Warning-Shortcut
 disable-server-manager
 Install-Gaming-Apps
 Start-Sleep -s 5
-Server2019Controller
+#Server2019Controller
 create-shortcut-app
-gpu-update-shortcut
+#gpu-update-shortcut
 disable-devices
 clean-up
 clean-up-recent
 provider-specific
-Write-Host "Once you have installed Razer Surround, the script is finished" -ForegroundColor RED
-Write-Host "PARSEC WILL NOT BE VISIBLE IF YOU'RE CONNECTED VIA RDP" -ForegroundColor RED
-Write-Host  "USE ParsecServiceManager.exe (ON DESKTOP) IN ORDER TO SIGN IN" -ForegroundColor RED
-Write-Host "THINGS YOU NEED TO DO" -ForegroundColor RED
-Write-Host "1. Open Parsec and sign in (use ParsecServiceManager.exe if connected via RDP)" -ForegroundColor RED
-Write-Host "2. Open Setup Auto Logon on the Desktop and follow the instructions (in the text file on the Desktop)" -ForegroundColor RED
-Write-Host "3. Run GPU Updater Tool" -ForegroundColor RED
-Write-Host "4. If your computer doesn't reboot automatically, restart it from the Start Menu after GPU Updater Tool is finished" -ForegroundColor RED
+Write-Host "Open Parsec and sign in (use ParsecServiceManager.exe if connected via RDP)" -ForegroundColor RED
 pause
