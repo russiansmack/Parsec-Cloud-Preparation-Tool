@@ -506,7 +506,7 @@ Function InstallParsec {
 Write-Host "Installing Parsec"
 Install7Zip
 ExtractInstallFiles
-InstallViGEmBus
+#InstallViGEmBus
 CreateFireWallRule
 CreateParsecService
 DownloadParsecServiceManager
