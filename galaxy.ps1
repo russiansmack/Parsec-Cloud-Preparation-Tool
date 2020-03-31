@@ -6,24 +6,26 @@ function create-directories {
     if((Test-Path -Path $path\DirectX) -eq $true) {} Else {New-Item -Path $path\DirectX -ItemType directory | Out-Null}
     if((Test-Path -Path $path\Drivers) -eq $true) {} Else {New-Item -Path $path\Drivers -ItemType Directory | Out-Null}
     if((Test-Path -Path $path\Devcon) -eq $true) {} Else {New-Item -Path $path\Devcon -ItemType Directory | Out-Null}
+
+    #Unblock all the things
+    Unblock-File -Path $path\*
+    Get-ChildItem -Path $path -Recurse | Unblock-File
 }
 
 #download-files-S3
 function download-resources {
     Write-Output "Downloading Parsec, DirectX June 2010 Redist, DevCon and Google Chrome."
     Write-Host "Downloading DirectX" -NoNewline
-    (New-Object System.Net.WebClient).DownloadFile("https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe", "$path\Apps\directx_Jun2010_redist.exe") 
+    (New-Object System.Net.WebClient).DownloadFile("https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe", "$path\Apps\directx_Jun2010_redist.exe") | Unblock-File
     Write-host "`r - Success!"
     Write-Host "Downloading Devcon" -NoNewline
-    (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/parsec-files-ami-setup/Devcon/devcon.exe", "$path\Devcon\devcon.exe")
+    (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/parsec-files-ami-setup/Devcon/devcon.exe", "$path\Devcon\devcon.exe") | Unblock-File
     Write-host "`r - Success!"
     Write-Host "Downloading Parsec" -NoNewline
-    (New-Object System.Net.WebClient).DownloadFile("https://builds.parsecgaming.com/package/parsec-windows.exe", "$path\Apps\parsec-windows.exe")
+    (New-Object System.Net.WebClient).DownloadFile("https://builds.parsecgaming.com/package/parsec-windows.exe", "$path\Apps\parsec-windows.exe") | Unblock-File
     Write-host "`r - Success!"
     Write-Host "Downloading Chrome" -NoNewline
-    #(New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/parseccloud/image/parsec+desktop.png", "$path\parsec+desktop.png")
-    #(New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/parseccloud/image/white_ico_agc_icon.ico", "$path\white_ico_agc_icon.ico")
-    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/tag/s/dl/chrome/install/googlechromestandaloneenterprise64.msi", "$path\Apps\googlechromestandaloneenterprise64.msi")
+    (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/tag/s/dl/chrome/install/googlechromestandaloneenterprise64.msi", "$path\Apps\googlechromestandaloneenterprise64.msi") | Unblock-File
     Write-host "`r - Success!"
 }
 
@@ -36,6 +38,22 @@ function install-windows-features {
     Install-WindowsFeature Direct-Play | Out-Null
     Install-WindowsFeature Net-Framework-Core | Out-Null
     Remove-Item -Path $path\DirectX -force -Recurse 
+}
+
+function Test-RegistryValue {
+    # https://www.jonathanmedd.net/2014/02/testing-for-the-presence-of-a-registry-key-and-value.html
+
+    #This specifies parameters for this function
+    param ([parameter(Mandatory=$true)][ValidateNotNullOrEmpty()]$Path, [parameter(Mandatory=$true)][ValidateNotNullOrEmpty()]$Value)
+    
+    try {
+        Get-ItemProperty -Path $Path | Select-Object -ExpandProperty $Value -ErrorAction Stop | Out-Null
+        return $true
+    }
+    catch {
+        return $false
+    }
+    
 }
 
 #set update policy
@@ -79,18 +97,6 @@ function disable-lock {
     Write-Output "Disable Lock"
     if((Test-Path -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System) -eq $true) {} Else {New-Item -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies -Name Software | Out-Null}
     if((Test-RegistryValue -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Value DisableLockWorkstation) -eq $true) {Set-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name DisableLockWorkstation -Value 1 | Out-Null } Else {New-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name DisableLockWorkstation -Value 1 | Out-Null}
-}
-
-#show hidden items
-function show-hidden-items {
-    Write-Output "Showing Hidden Files in Explorer"
-    set-itemproperty -path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name Hidden -Value 1 | Out-Null
-}
-
-#show file extensions
-function show-file-extensions {
-    Write-Output "Showing File Extensions"
-    Set-itemproperty -path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -name HideFileExt -Value 0 | Out-Null
 }
     
 #Enable Pointer Precision 
@@ -145,8 +151,7 @@ Function PreParsec
 function Install7Zip {
     #7Zip is required to extract the Parsec-Windows.exe File
     Write-Host "Downloading and Installing 7Zip"
-    $url = Invoke-WebRequest -Uri https://www.7-zip.org/download.html
-    (New-Object System.Net.WebClient).DownloadFile("https://www.7-zip.org/$($($($url.Links | Where-Object outertext -Like "Download")[1]).OuterHTML.split('"')[1])" ,"$path\Apps\7zip.exe")
+    (New-Object System.Net.WebClient).DownloadFile("https://www.7-zip.org/a/7z1900-x64.exe" ,"$path\Apps\7zip.exe") | Unblock-File
     Start-Process $path\Apps\7zip.exe -ArgumentList '/S /D="C:\Program Files\7-Zip"' -Wait
 }
     
@@ -195,7 +200,7 @@ Function DownloadParsecServiceManager {
 Function Server2019Controller {
     if ((gwmi win32_operatingsystem | % caption) -like '*Windows Server 2019*') {
         "Detected Windows Server 2019, downloading Xbox Accessories 1.2 to enable controller support"
-        (New-Object System.Net.WebClient).DownloadFile("http://download.microsoft.com/download/6/9/4/69446ACF-E625-4CCF-8F56-58B589934CD3/Xbox360_64Eng.exe", "$path\Drivers\Xbox360_64Eng.exe")
+        (New-Object System.Net.WebClient).DownloadFile("http://download.microsoft.com/download/6/9/4/69446ACF-E625-4CCF-8F56-58B589934CD3/Xbox360_64Eng.exe", "$path\Drivers\Xbox360_64Eng.exe") | Unblock-File
         Write-Host "In order to use a controller, you need to install Microsoft Xbox Accessories " -ForegroundColor Red
         Start-Process $path\Drivers\Xbox360_64Eng.exe -Wait
     }
@@ -276,7 +281,7 @@ Function gpu-detector {
 #enable auto login - remove user password
 function autoLogin { 
     Write-Host "This cloud machine needs to be set to automatically login - doing that" -ForegroundColor red 
-    (New-Object System.Net.WebClient).DownloadFile("https://download.sysinternals.com/files/AutoLogon.zip", "$path\Autologon.zip")
+    (New-Object System.Net.WebClient).DownloadFile("https://download.sysinternals.com/files/AutoLogon.zip", "$path\Autologon.zip") | Unblock-File
     Expand-Archive "$path\Autologon.zip" -DestinationPath "$path" -Force
     
     #TOFIX: REMOVE THIS HACK FOR PROD
@@ -298,7 +303,7 @@ function autoLogin {
 #Audio Drivers
 function audio-driver {
     Write-Output "Installing audio driver"
-    (New-Object System.Net.WebClient).DownloadFile("http://rzr.to/surround-pc-download", "$path\Apps\razer-surround-driver.exe")
+    (New-Object System.Net.WebClient).DownloadFile("http://rzr.to/surround-pc-download", "$path\Apps\razer-surround-driver.exe") | Unblock-File
     Write-Host "Installing Razer Surround - it's the Audio Driver - you DON'T need to sign into Razer Synapse" -ForegroundColor green
     
     #Move extracts Razer Surround Files into correct location
@@ -310,11 +315,9 @@ function audio-driver {
     $regex = '(?<=<SilentMode>)[^<]*'
     (Get-Content $InstallerManifest) -replace $regex, 'true' | Set-Content $InstallerManifest -Encoding UTF8
     
-    $OriginalLocation = Get-Location
-    Set-Location -Path $path + '\Apps\razer-surround-driver\$TEMP\RazerSurroundInstaller\'
     Write-Output "The Audio Driver, Razer Surround is now installing"
-    Start-Process RzUpdateManager.exe
-    Set-Location $OriginalLocation
+    $rzPath = $path + '\Apps\razer-surround-driver\$TEMP\RazerSurroundInstaller\RzUpdateManager.exe'
+    Start-Process -FilePath $rzPath
     Set-Service -Name audiosrv -StartupType Automatic
 
     #Shit who knows. Wait for the above update manager to do it's magic and then remove start up for next boot
@@ -344,8 +347,6 @@ force-close-apps
 disable-network-window
 disable-logout
 disable-lock
-show-hidden-items
-show-file-extensions
 enhance-pointer-precision
 enable-mousekeys
 set-time
