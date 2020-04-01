@@ -1,6 +1,91 @@
+####GOLDEN IMAGE SETUP START
+
+#Download and Install AWSCLI
+function install-awscli {
+    Write-Host "Downloading AWS CLI" -NoNewline
+    (New-Object System.Net.WebClient).DownloadFile("https://awscli.amazonaws.com/AWSCLIV2.msi", "$path\AWSCLIV2.msi") | Unblock-File
+    # TODO generalize next line
+    start-process -filepath "C:\Windows\System32\msiexec.exe" -ArgumentList "/qn /i","$path\AWSCLIV2.msi" -Wait
+
+    #Hack so that we will be able to use AWS CLI in the following commands
+    $Env:path += "C:\Program Files\Amazon\AWSCLIV2\;"
+}
+
+# Reference: https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/install-nvidia-driver.html#nvidia-gaming-driver
+# Notes: Required s3.getobject, s3.list-objects api calls
+function download-nvidia {
+    $Bucket = "nvidia-gaming"
+    $KeyPrefix = "windows/latest"
+    $LocalPath = "$path\NVIDIA"
+
+    #Download drivers & Extract archives
+    $Objects = Get-S3Object -BucketName $Bucket -KeyPrefix $KeyPrefix -Region us-east-1
+    foreach ($Object in $Objects) {
+        $LocalFileName = $Object.Key
+        if ($LocalFileName -ne '' -and $Object.Size -ne 0) {
+            $LocalFilePath = Join-Path $LocalPath $LocalFileName
+            Copy-S3Object -BucketName $Bucket -Key $Object.Key -LocalFile $LocalFilePath -Region us-east-1
+
+            $LocalFileDir = Join-Path $LocalPath $KeyPrefix
+            Expand-Archive -Path $LocalFilePath -DestinationPath $LocalFileDir
+        }
+    }
+}
+
+function install-nvidia {
+    $KeyPrefix = "windows/latest"
+    $LocalPath = "$path\NVIDIA"
+
+    # Install Drivers
+    $ArchiveFileDir = Join-Path $LocalPath $KeyPrefix
+    $Installer = Get-ChildItem -Path $ArchiveFileDir\* -Include *win10*.exe
+
+    Write-Host "Installing NVIDIA Drivers" -NoNewline
+    Start-Process -FilePath $Installer -ArgumentList '/s' -wait
+
+    # TODO bug with existing key error
+    New-ItemProperty -Path "HKLM:\SOFTWARE\NVIDIA Corporation\Global" -Name "vGamingMarketplace" -Value "2" -PropertyType DWord
+
+    # Download & Install Certification File
+    $CertFileURL = "https://s3.amazonaws.com/nvidia-gaming/GridSwCert-Windows.cert"
+    $CertFilePath = "$path\GridSwCert.txt"
+    $CertFileInstallPath = "C:\Users\Public\Documents"
+
+    Write-Host "Downloading CertFile" -NoNewline
+    (New-Object System.Net.WebClient).DownloadFile($CertFileURL, $CertFilePath)
+
+    Copy-Item -Path $CertFilePath -Destination $CertFileInstallPath
+
+    # Code to remove downloaded files
+    Remove-Item -Path $LocalPath -Recurse
+    Remove-Item -Path $CertFilePath
+
+    # Activate & Validate NVIDIA Gaming License
+    $NvidiaAppPath = "C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+    $NvsmiLogFilePath = "$path\nvsmi.log"
+
+    # TODO upload this file to something to validate and test build
+    & $NvidiaAppPath -q | Out-File -FilePath $NvsmiLogFilePath
+
+    # TODO bug with existing key error
+    New-ItemProperty -Path "HKLM:\SOFTWARE\NVIDIA Corporation\Global\GridLicensing" -Name "FeatureType" -Value "0" -PropertyType DWord
+    New-ItemProperty -Path "HKLM:\SOFTWARE\NVIDIA Corporation\Global\GridLicensing" -Name "IgnoreSP" -Value "1" -PropertyType DWord
+
+    # Optimizing GPU
+    Write-Host "Optimizing GPU"
+
+    # Disable autoboost
+    & $NvidiaAppPath --auto-boost-default=0 | Out-File -FilePath $NvsmiLogFilePath -Append
+
+    # Set GPU to max freq on G4 instances
+    # TODO optimize for each GPU
+    & $NvidiaAppPath -ac "5001,1590" | Out-File -FilePath $NvsmiLogFilePath -Append
+}
+####GOLDEN IMAGE SETUP END
+
 #Create ParsecTemp folder in C Drive
 function create-directories {
-    Write-Output "Creating Directories in $path Drive"
+    Write-Output "Creating Directories in $path"
     if((Test-Path -Path $path )-eq $true){} Else {New-Item -Path $path -ItemType directory | Out-Null}
     if((Test-Path -Path $path\Apps) -eq $true) {} Else {New-Item -Path $path\Apps -ItemType directory | Out-Null}
     if((Test-Path -Path $path\DirectX) -eq $true) {} Else {New-Item -Path $path\DirectX -ItemType directory | Out-Null}
@@ -27,6 +112,13 @@ function download-resources {
     Write-Host "Downloading Chrome" -NoNewline
     (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/tag/s/dl/chrome/install/googlechromestandaloneenterprise64.msi", "$path\Apps\googlechromestandaloneenterprise64.msi") | Unblock-File
     Write-host "`r - Success!"
+}
+
+function install-7zip {
+    #7Zip is required to extract the installers
+    Write-Host "Downloading and Installing 7Zip"
+    (New-Object System.Net.WebClient).DownloadFile("https://www.7-zip.org/a/7z1900-x64.exe" ,"$path\Apps\7zip.exe") | Unblock-File
+    Start-Process $path\Apps\7zip.exe -ArgumentList '/S /D="C:\Program Files\7-Zip"' -Wait
 }
 
 #install-base-files-silently
@@ -130,7 +222,6 @@ function install-parsec
     PreParsec
     New-ItemProperty -path HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name "Parsec.App.0" -Value "C:\Program Files\Parsec\parsecd.exe" | Out-Null
     Start-Process -FilePath "C:\Program Files\Parsec\parsecd.exe"
-    Start-Sleep -s 1
     #TODO: TEST THAT THIS WILL WORK
     #Write-Output "app_host=1" | Out-File -FilePath $ENV:AppData\Parsec\config.txt -Encoding ascii
 }
@@ -138,7 +229,6 @@ function install-parsec
 Function PreParsec 
 {
     Write-Host "Installing PreParsec"
-    Install7Zip
     ExtractInstallFiles
     #InstallViGEmBus
     CreateFireWallRule
@@ -148,24 +238,18 @@ Function PreParsec
 }
 
 ######PRE PARSEC START
-function Install7Zip {
-    #7Zip is required to extract the Parsec-Windows.exe File
-    Write-Host "Downloading and Installing 7Zip"
-    (New-Object System.Net.WebClient).DownloadFile("https://www.7-zip.org/a/7z1900-x64.exe" ,"$path\Apps\7zip.exe") | Unblock-File
-    Start-Process $path\Apps\7zip.exe -ArgumentList '/S /D="C:\Program Files\7-Zip"' -Wait
-}
     
 function ExtractInstallFiles {
     #Move Parsec Files into correct location
     Write-Host "Moving files to the correct location"
-    cmd.exe /c "'C:\Program Files\7-Zip\7z.exe' x $path\Apps\parsec-windows.exe -o$temp\Apps\Parsec-Windows -y" | Out-Null
+
+    & 'C:\Program Files\7-Zip\7z.exe' x $path\Apps\parsec-windows.exe -o"$path\Apps\Parsec-Windows" -y | Out-Null
     if((Test-Path -Path 'C:\Program Files\Parsec')-eq $true) {} Else {New-Item -Path 'C:\Program Files\Parsec' -ItemType Directory | Out-Null}
-    if((Test-Path -Path "C:\Program Files\Parsec\skel") -eq $true) {} Else {Move-Item -Path $temp\Apps\Parsec-Windows\skel -Destination 'C:\Program Files\Parsec' | Out-Null} 
-    if((Test-Path -Path "C:\Program Files\Parsec\vigem") -eq $true) {} Else  {Move-Item -Path $temp\Apps\Parsec-Windows\vigem -Destination 'C:\Program Files\Parsec' | Out-Null} 
-    if((Test-Path -Path "C:\Program Files\Parsec\wscripts") -eq $true) {} Else  {Move-Item -Path $temp\Apps\Parsec-Windows\wscripts -Destination 'C:\Program Files\Parsec' | Out-Null} 
-    if((Test-Path -Path "C:\Program Files\Parsec\parsecd.exe") -eq $true) {} Else {Move-Item -Path $temp\Apps\Parsec-Windows\parsecd.exe -Destination 'C:\Program Files\Parsec' | Out-Null} 
-    if((Test-Path -Path "C:\Program Files\Parsec\pservice.exe") -eq $true) {} Else {Move-Item -Path $temp\Apps\Parsec-Windows\pservice.exe -Destination 'C:\Program Files\Parsec' | Out-Null} 
-    Start-Sleep 1
+    if((Test-Path -Path "C:\Program Files\Parsec\skel") -eq $true) {} Else {Move-Item -Path $path\Apps\Parsec-Windows\skel -Destination 'C:\Program Files\Parsec' | Out-Null} 
+    if((Test-Path -Path "C:\Program Files\Parsec\vigem") -eq $true) {} Else  {Move-Item -Path $path\Apps\Parsec-Windows\vigem -Destination 'C:\Program Files\Parsec' | Out-Null} 
+    if((Test-Path -Path "C:\Program Files\Parsec\wscripts") -eq $true) {} Else  {Move-Item -Path $path\Apps\Parsec-Windows\wscripts -Destination 'C:\Program Files\Parsec' | Out-Null} 
+    if((Test-Path -Path "C:\Program Files\Parsec\parsecd.exe") -eq $true) {} Else {Move-Item -Path $path\Apps\Parsec-Windows\parsecd.exe -Destination 'C:\Program Files\Parsec' | Out-Null} 
+    if((Test-Path -Path "C:\Program Files\Parsec\pservice.exe") -eq $true) {} Else {Move-Item -Path $path\Apps\Parsec-Windows\pservice.exe -Destination 'C:\Program Files\Parsec' | Out-Null} 
 }
 
 #Install ViGEmBus for controller support
@@ -213,12 +297,6 @@ function disable-devices {
     Get-PnpDevice| where {$_.friendlyname -like "Generic Non-PNP Monitor" -and $_.status -eq "OK"} | Disable-PnpDevice -confirm:$false
     Get-PnpDevice| where {$_.friendlyname -like "Microsoft Basic Display Adapter" -and $_.status -eq "OK"} | Disable-PnpDevice -confirm:$false
     Start-Process -FilePath "$path\Devcon\devcon.exe" -ArgumentList '/r disable "PCI\VEN_1013&DEV_00B8*"'
-}
-
-#Cleanup
-function clean-up {
-    Write-Output "Cleaning up!"
-    Remove-Item -Path $path -force -Recurse
 }
 
 #GPU Detector
@@ -278,25 +356,20 @@ Function gpu-detector {
     }
 }
 
-#enable auto login - remove user password
-function autoLogin { 
-    Write-Host "This cloud machine needs to be set to automatically login - doing that" -ForegroundColor red 
+#enable auto login
+function auto-login { 
     (New-Object System.Net.WebClient).DownloadFile("https://download.sysinternals.com/files/AutoLogon.zip", "$path\Autologon.zip") | Unblock-File
     Expand-Archive "$path\Autologon.zip" -DestinationPath "$path" -Force
     
-    #TOFIX: REMOVE THIS HACK FOR PROD
-    Write-Host "Running a hack to enable LA Servers us-west-2" -ForegroundColor red
-    aws configure set region us-west-2
-    
     $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri http://169.254.169.254/latest/api/token
     $instanceId = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/instance-id
-    aws s3 cp s3://demo-parsec/herpderp.pem herpderp.pem 
-    $winPass = aws ec2 get-password-data --instance-id $instanceId --priv-launch-key herpderp.pem --query PasswordData --output text
+    Read-S3Object -BucketName demo-parsec -Key herpderp.pem -File $path\herpderp.pem
+    $winPass = Get-EC2PasswordData -InstanceId $instanceId -PemFile $path\herpderp.pem
     $autoLoginP = Start-Process "$path\Autologon.exe" -ArgumentList "/accepteula", $autoLoginUser, $env:Computername, $winPass -PassThru -Wait
     If ($autoLoginP.ExitCode -eq 0) {
-      Write-Host "AutoLogin Enabled" -ForegroundColor green 
+        Write-Host "AutoLogin Enabled" -ForegroundColor green 
     } Else {
-      Write-Host "AutoLogin ERROR" -ForegroundColor red 
+         Write-Host "AutoLogin ERROR" -ForegroundColor red 
     }
 }
 
@@ -308,7 +381,7 @@ function audio-driver {
     
     #Move extracts Razer Surround Files into correct location
     Write-Host "Moving Razer Surround files to the correct location"
-    cmd.exe /c "'C:\Program Files\7-Zip\7z.exe' x $path\Apps\razer-surround-driver.exe -o$path\Apps\razer-surround-driver -y" | Out-Null
+    & 'C:\Program Files\7-Zip\7z.exe' x $path\Apps\razer-surround-driver.exe -o"$path\Apps\razer-surround-driver" -y | Out-Null
     
     #modifys the installer manifest to run without interraction
     $InstallerManifest = $path + '\Apps\razer-surround-driver\$TEMP\RazerSurroundInstaller\InstallerManifest.xml'
@@ -316,18 +389,25 @@ function audio-driver {
     (Get-Content $InstallerManifest) -replace $regex, 'true' | Set-Content $InstallerManifest -Encoding UTF8
     
     Write-Output "The Audio Driver, Razer Surround is now installing"
-    $rzPath = $path + '\Apps\razer-surround-driver\$TEMP\RazerSurroundInstaller\RzUpdateManager.exe'
-    Start-Process -FilePath $rzPath
+    $rzPath = Join-Path $path '\Apps\razer-surround-driver\$TEMP\RazerSurroundInstaller'
+    Start-Process -FilePath "RzUpdateManager.exe" -WorkingDirectory $rzPath
     Set-Service -Name audiosrv -StartupType Automatic
 
     #Shit who knows. Wait for the above update manager to do it's magic and then remove start up for next boot
-    Start-Sleep -s 15
+    Write-Output "45s for Audio Drivers to finalize"
+    Start-Sleep -s 45
 
     #This is to remove autostartup of razer window : MUST ADD
     if (((Get-Item -Path HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run).GetValue("Razer Synapse") -ne $null) -eq $true) 
     {Remove-ItemProperty -path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run" -Name "Razer Synapse"
     "Removed Startup Item from Razer Synapse"}
     Else {"Razer Startup Item not present"}
+}
+
+#Cleanup
+function clean-up {
+    Write-Output "Cleaning up!"
+    Remove-Item -Path $path -force -Recurse
 }
 
 Write-Host -foregroundcolor red "
@@ -340,10 +420,18 @@ $autoLoginUser = "Administrator" #Username to be used in autologin (AWS uses Adm
 $path = "C:\ParsecTemp" #Path for installer
 
 create-directories
+
+#Golden image start
+install-awscli
+download-nvidia
+install-nvidia
+#Golden image end
+
 download-resources
+install-7zip
 install-windows-features
-set-update-policy 
-force-close-apps 
+set-update-policy
+force-close-apps
 disable-network-window
 disable-logout
 disable-lock
@@ -352,12 +440,10 @@ enable-mousekeys
 set-time
 disable-server-manager
 install-parsec
-Start-Sleep -s 5
 #Server2019Controller #USE THIS TO EXTRACT LATER: https://social.technet.microsoft.com/Forums/office/en-US/f5bd7dd6-36f4-4309-8dd5-7d746cb161d2/silent-install-of-xbox-360-controller-drivers?forum=w7itproinstall
 disable-devices
-clean-up
-gpu-detector
-autoLogin
+#gpu-detector
+auto-login
 audio-driver
+#clean-up
 Write-Host "Script ended. It's over. Stop looking at me." -ForegroundColor Green
-pause
