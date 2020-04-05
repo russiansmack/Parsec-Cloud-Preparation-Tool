@@ -10,6 +10,9 @@ We are installing all the needed essentials to make this machine stream games
 $autoLoginUser = "Administrator" #Username to be used in autologin (AWS uses Administrator)
 $path = "C:\ParsecTemp" #Path for installer
 
+#HACK FOR LAX REGION TO WORK
+Add-Content C:\Windows\System32\Drivers\etc\hosts "52.94.212.196 ssm.us-west-2-lax-1.amazonaws.com"
+
 ####GOLDEN IMAGE SETUP START
 
 # Reference: https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/install-nvidia-driver.html#nvidia-gaming-driver
