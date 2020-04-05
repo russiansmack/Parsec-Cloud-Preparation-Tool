@@ -1,15 +1,16 @@
+#Useful commands
+# & "C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe" -q #query nvidia driver
+
+Write-Host -foregroundcolor red "
+THIS IS GALAXY.
+We are installing all the needed essentials to make this machine stream games
+"
+
+#Predefined Vars
+$autoLoginUser = "Administrator" #Username to be used in autologin (AWS uses Administrator)
+$path = "C:\ParsecTemp" #Path for installer
+
 ####GOLDEN IMAGE SETUP START
-
-#Download and Install AWSCLI
-function install-awscli {
-    Write-Host "Downloading AWS CLI" -NoNewline
-    (New-Object System.Net.WebClient).DownloadFile("https://awscli.amazonaws.com/AWSCLIV2.msi", "$path\AWSCLIV2.msi") | Unblock-File
-    # TODO generalize next line
-    start-process -filepath "C:\Windows\System32\msiexec.exe" -ArgumentList "/qn /i","$path\AWSCLIV2.msi" -Wait
-
-    #Hack so that we will be able to use AWS CLI in the following commands
-    $Env:path += "C:\Program Files\Amazon\AWSCLIV2\;"
-}
 
 # Reference: https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/install-nvidia-driver.html#nvidia-gaming-driver
 # Notes: Required s3.getobject, s3.list-objects api calls
@@ -32,6 +33,40 @@ function download-nvidia {
     }
 }
 
+function download-nvidia-grid {
+    $Bucket = "ec2-windows-nvidia-drivers"
+    $KeyPrefix = "g4/latest"
+    $LocalPath = "$path\NVIDIA"
+
+    #Download drivers & Extract archives
+    $Objects = Get-S3Object -BucketName $Bucket -KeyPrefix $KeyPrefix -Region us-east-1
+    foreach ($Object in $Objects) {
+        $LocalFileName = $Object.Key
+        if ($LocalFileName -ne '' -and $Object.Size -ne 0) {
+            $LocalFilePath = Join-Path $LocalPath $LocalFileName
+            Copy-S3Object -BucketName $Bucket -Key $Object.Key -LocalFile $LocalFilePath -Region us-east-1
+
+            $LocalFileDir = Join-Path $LocalPath $KeyPrefix
+            Expand-Archive -Path $LocalFilePath -DestinationPath $LocalFileDir
+        }
+    }
+}
+
+function download-old-nvidia {
+    $Bucket = "nvidia-gaming"
+    $KeyPrefix = "windows/latest"
+    $LocalPath = "$path\NVIDIA"
+
+    #Download drivers & Extract archives
+
+        $LocalFileName = "windows/GRID-436.30-Feb2020-vGaming-Windows-Guest-Drivers.zip"
+        $LocalFilePath = Join-Path $LocalPath $LocalFileName
+        Copy-S3Object -BucketName $Bucket -Key $LocalFileName -LocalFile $LocalFilePath -Region us-east-1
+
+        $LocalFileDir = Join-Path $LocalPath $KeyPrefix
+        Expand-Archive -Path $LocalFilePath -DestinationPath $LocalFileDir
+}
+
 function install-nvidia {
     $KeyPrefix = "windows/latest"
     $LocalPath = "$path\NVIDIA"
@@ -52,13 +87,9 @@ function install-nvidia {
     $CertFileInstallPath = "C:\Users\Public\Documents"
 
     Write-Host "Downloading CertFile" -NoNewline
-    (New-Object System.Net.WebClient).DownloadFile($CertFileURL, $CertFilePath)
+    (New-Object System.Net.WebClient).DownloadFile($CertFileURL, $CertFilePath) | Unblock-File
 
     Copy-Item -Path $CertFilePath -Destination $CertFileInstallPath
-
-    # Code to remove downloaded files
-    Remove-Item -Path $LocalPath -Recurse
-    Remove-Item -Path $CertFilePath
 
     # Activate & Validate NVIDIA Gaming License
     $NvidiaAppPath = "C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
@@ -68,8 +99,8 @@ function install-nvidia {
     & $NvidiaAppPath -q | Out-File -FilePath $NvsmiLogFilePath
 
     # TODO bug with existing key error
-    New-ItemProperty -Path "HKLM:\SOFTWARE\NVIDIA Corporation\Global\GridLicensing" -Name "FeatureType" -Value "0" -PropertyType DWord
-    New-ItemProperty -Path "HKLM:\SOFTWARE\NVIDIA Corporation\Global\GridLicensing" -Name "IgnoreSP" -Value "1" -PropertyType DWord
+    #New-ItemProperty -Path "HKLM:\SOFTWARE\NVIDIA Corporation\Global\GridLicensing" -Name "FeatureType" -Value "0" -PropertyType DWord
+    #New-ItemProperty -Path "HKLM:\SOFTWARE\NVIDIA Corporation\Global\GridLicensing" -Name "IgnoreSP" -Value "1" -PropertyType DWord
 
     # Optimizing GPU
     Write-Host "Optimizing GPU"
@@ -81,6 +112,14 @@ function install-nvidia {
     # TODO optimize for each GPU
     & $NvidiaAppPath -ac "5001,1590" | Out-File -FilePath $NvsmiLogFilePath -Append
 }
+
+function take-my-money {
+    Write-Host "Downloading NVIDIA TAKE MY MONEY DEMO"
+    (New-Object System.Net.WebClient).DownloadFile("https://us.download.nvidia.com/downloads/cool_stuff/demos/SetupFaceWorks.exe", "$path\Apps\SetupFaceWorks.exe") | Unblock-File
+    Start-Process -FilePath "$path\Apps\SetupFaceWorks.exe" -ArgumentList "/S" -wait
+}
+
+
 ####GOLDEN IMAGE SETUP END
 
 #Create ParsecTemp folder in C Drive
@@ -100,18 +139,14 @@ function create-directories {
 #download-files-S3
 function download-resources {
     Write-Output "Downloading Parsec, DirectX June 2010 Redist, DevCon and Google Chrome."
-    Write-Host "Downloading DirectX" -NoNewline
+    Write-Host "Downloading DirectX"
     (New-Object System.Net.WebClient).DownloadFile("https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe", "$path\Apps\directx_Jun2010_redist.exe") | Unblock-File
-    Write-host "`r - Success!"
-    Write-Host "Downloading Devcon" -NoNewline
+    Write-Host "Downloading Devcon"
     (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/parsec-files-ami-setup/Devcon/devcon.exe", "$path\Devcon\devcon.exe") | Unblock-File
-    Write-host "`r - Success!"
-    Write-Host "Downloading Parsec" -NoNewline
+    Write-Host "Downloading Parsec"
     (New-Object System.Net.WebClient).DownloadFile("https://builds.parsecgaming.com/package/parsec-windows.exe", "$path\Apps\parsec-windows.exe") | Unblock-File
-    Write-host "`r - Success!"
-    Write-Host "Downloading Chrome" -NoNewline
+    Write-Host "Downloading Chrome"
     (New-Object System.Net.WebClient).DownloadFile("https://dl.google.com/tag/s/dl/chrome/install/googlechromestandaloneenterprise64.msi", "$path\Apps\googlechromestandaloneenterprise64.msi") | Unblock-File
-    Write-host "`r - Success!"
 }
 
 function install-7zip {
@@ -410,21 +445,13 @@ function clean-up {
     Remove-Item -Path $path -force -Recurse
 }
 
-Write-Host -foregroundcolor red "
-THIS IS GALAXY.
-We are installing all the needed essentials to make this machine stream games
-"
 
-#Predefined Vars
-$autoLoginUser = "Administrator" #Username to be used in autologin (AWS uses Administrator)
-$path = "C:\ParsecTemp" #Path for installer
 
 create-directories
 
 #Golden image start
-install-awscli
-download-nvidia
-install-nvidia
+#download-nvidia
+#install-nvidia
 #Golden image end
 
 download-resources
