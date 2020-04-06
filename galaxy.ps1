@@ -10,10 +10,16 @@ We are installing all the needed essentials to make this machine stream games
 $autoLoginUser = "Administrator" #Username to be used in autologin (AWS uses Administrator)
 $path = "C:\ParsecTemp" #Path for installer
 
-#HACK FOR LAX REGION TO WORK
-Add-Content C:\Windows\System32\Drivers\etc\hosts "52.94.212.196 ssm.us-west-2-lax-1.amazonaws.com"
-
 ####GOLDEN IMAGE SETUP START
+
+function install-ssm {
+    Invoke-WebRequest `
+        https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
+        -OutFile $path\SSMAgent_latest.exe | Unblock-File
+    Start-Process `
+        -FilePath $path\SSMAgent_latest.exe `
+        -ArgumentList "/S"
+}
 
 # Reference: https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/install-nvidia-driver.html#nvidia-gaming-driver
 # Notes: Required s3.getobject, s3.list-objects api calls
@@ -453,6 +459,7 @@ function clean-up {
 create-directories
 
 #Golden image start
+install-ssm
 #download-nvidia
 #install-nvidia
 #Golden image end
