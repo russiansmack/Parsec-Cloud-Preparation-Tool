@@ -13,6 +13,7 @@ $path = "C:\ParsecTemp" #Path for installer
 ####GOLDEN IMAGE SETUP START
 
 function install-ssm {
+    Write-Host "Installing AWS SSM"
     Invoke-WebRequest `
         https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
         -OutFile $path\SSMAgent_latest.exe | Unblock-File
